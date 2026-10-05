@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hue Eaters</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one canvas, a thin control strip under it. Single dark look by choice. */
+  :root {
+    --bg: #0d0e12;
+    --panel: #171920;
+    --line: #2a2d38;
+    --fg: #d9dbe4;
+    --muted: #8a8ea0;
+    --accent: #f2c94c;
+    --display: "Silkscreen", ui-monospace, monospace;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --rainbow: linear-gradient(90deg, hsl(0 85% 55%), hsl(60 85% 55%), hsl(120 85% 55%), hsl(180 85% 55%), hsl(240 85% 55%), hsl(300 85% 55%), hsl(360 85% 55%));
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.5 var(--mono);
+    padding-inline: 16px; padding-block: 20px;
+    box-sizing: border-box;
+    margin: 0;
+  }
+  main { max-width: 640px; margin: 0 auto; display: grid; gap: 14px; }
+  h1 { font: 400 22px/1 var(--display); margin: 0; letter-spacing: .04em; }
+  p { margin: 0; color: var(--muted); max-width: 62ch; }
+  canvas {
+    width: 100%; aspect-ratio: 1; max-width: 100%;
+    image-rendering: pixelated; display: block;
+    border: 1px solid var(--line); background: #000;
+    cursor: crosshair; touch-action: none;
+  }
+  .wheel { position: relative; height: 10px; background: var(--rainbow); }
+  .bite { position: absolute; top: -3px; bottom: -3px; left: 0; border: 1px solid var(--fg); border-left-width: 2px; }
+  .controls {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 20px;
+    background: var(--panel); border: 1px solid var(--line); padding: 12px 14px;
+  }
+  .group { grid-column: 1 / -1; font: 400 11px var(--display); letter-spacing: .08em; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+  .group:first-child { border-top: 0; padding-top: 0; }
+  label { display: grid; grid-template-columns: 6.5em 1fr 4.5em; align-items: center; gap: 8px; color: var(--muted); }
+  .duallabel { display: grid; grid-template-columns: 6.5em 1fr 4.5em; align-items: center; gap: 8px; color: var(--muted); grid-column: 1 / -1; }
+  .duallabel output { color: var(--fg); font-variant-numeric: tabular-nums; text-align: right; }
+  .dual { position: relative; height: 20px; }
+  .dual .track { position: absolute; left: 6px; right: 6px; top: 8px; height: 4px; background: var(--line); }
+  .dual .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); }
+  .dual input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none; }
+  .dual input::-webkit-slider-runnable-track { background: transparent; }
+  .dual input::-moz-range-track { background: transparent; }
+  .dual input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 12px; height: 20px; background: var(--fg); border: 1px solid var(--bg); cursor: ew-resize; }
+  .dual input::-moz-range-thumb { pointer-events: auto; width: 12px; height: 20px; background: var(--fg); border: 1px solid var(--bg); border-radius: 0; cursor: ew-resize; }
+  .dual input:focus-visible { outline: none; }
+  .dual input:focus-visible::-webkit-slider-thumb { background: var(--accent); }
+  .dual input:focus-visible::-moz-range-thumb { background: var(--accent); }
+  label output { color: var(--fg); font-variant-numeric: tabular-nums; text-align: right; }
+  input[type=range] { width: 100%; min-width: 0; accent-color: var(--accent); }
+  input.hue { -webkit-appearance: none; appearance: none; height: 8px; background: var(--rainbow); border-radius: 0; }
+  input.hue::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 18px; background: var(--fg); border: 1px solid var(--bg); }
+  input.hue::-moz-range-thumb { width: 8px; height: 18px; background: var(--fg); border: 1px solid var(--bg); border-radius: 0; }
+  .swatch { display: inline-block; width: 1.2em; height: 1.2em; vertical-align: middle; border: 1px solid var(--line); }
+  select, input[type=text] { background: var(--bg); color: var(--fg); border: 1px solid var(--line); font: inherit; padding: 2px 4px; min-width: 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row .stat { margin-left: auto; }
+  .share { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+  .share input { flex: 1; font-size: 12px; padding: 5px 6px; }
+  button {
+    font: 400 12px var(--display); letter-spacing: .05em;
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    padding: 6px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stat { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .info { border: 1px solid var(--line); background: var(--panel); padding: 10px 14px; }
+  .info summary { cursor: pointer; font: 400 12px var(--display); letter-spacing: .05em; }
+  .info summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .info dl { display: grid; grid-template-columns: 7.5em 1fr; gap: 6px 14px; margin: 12px 0 2px; }
+  .info dt { color: var(--fg); }
+  .info dd { margin: 0; color: var(--muted); min-width: 0; }
+  @media (max-width: 420px) { .info dl { grid-template-columns: 1fr; } .info dd { margin-bottom: 6px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Hue Eaters</h1>
+  <p>Every pixel has a hue anywhere on the color wheel. A pixel eats a neighbor whose hue is a little ahead of its own, within the bite window, and the eaten pixel takes on the eater's hue plus a small random drift. Drag on the grid to paint.</p>
+  <canvas id="c"></canvas>
+  <div class="wheel" aria-hidden="true"><div class="bite" id="biteMark"></div></div>
+  <div class="controls">
+    <div class="group">Rules</div>
+    <div class="duallabel" title="The range of hues a pixel can eat, measured ahead of its own hue on the color wheel. Hues closer than the low end are safe; hues past the high end are out of reach.">
+      <span id="biteLabel">Bite window</span>
+      <div class="dual" id="dual" role="group" aria-labelledby="biteLabel">
+        <div class="track"><div class="fill" id="biteFill"></div></div>
+        <input id="minb" type="range" min="0" max="120" value="0" aria-label="Minimum bite">
+        <input id="bite" type="range" min="0" max="120" value="30" aria-label="Maximum bite">
+      </div>
+      <output id="biteOut">0–30°</output>
+    </div>
+    <label for="mut" title="Random drift added to an eaten pixel's new hue. Zero tends to freeze; more keeps things moving and noisier.">Mutation <input id="mut" type="range" min="0" max="200" value="10"><output id="mutOut">1.0°</output></label>
+    <label for="pick" title="When several neighbors could eat a pixel, how much the one closest in hue is favored. 0 picks at random; 100 always picks the closest.">Pickiness <input id="pick" type="range" min="0" max="100" value="50"><output id="pickOut">50</output></label>
+    <label for="t" title="How many eligible neighbors it takes to eat a pixel. Higher is harder to get going but makes cleaner shapes.">Hunger <input id="t" type="range" min="1" max="48" value="1"><output id="tOut">1</output></label>
+    <label for="nb" title="Which nearby pixels count as neighbors. Diamond counts straight lines out from the pixel; Square adds the corners.">Neighbors
+      <select id="nb"><option value="4">Diamond</option><option value="8">Square</option></select><output id="nbOut">4</output>
+    </label>
+    <label for="radius" title="How far away a pixel can be and still count as a neighbor. Bigger gives larger, smoother shapes but runs slower.">Radius <input id="radius" type="range" min="1" max="3" value="1"><output id="radiusOut">1</output></label>
+
+    <div class="group">Run</div>
+    <label for="speed" title="Steps per frame. Max runs as many as your computer can.">Speed <input id="speed" type="range" min="0" max="6" value="1"><output id="speedOut">½×</output></label>
+    <label for="start" title="The pattern Reset starts from. Some settings can keep spirals going but cannot start them from noise; try Smooth or Pinwheel.">Reset to
+      <select id="start">
+        <option value="noise">Noise</option>
+        <option value="smooth">Smooth</option>
+        <option value="pinwheel">Pinwheel</option>
+        <option value="vortex">Vortex pair</option>
+        <option value="rings">Rings</option>
+        <option value="gradient">Gradient</option>
+        <option value="seeds">Seeds</option>
+      </select><span></span>
+    </label>
+    <label for="gridsize" title="How many pixels across. Smaller runs faster and looks chunkier. Changing it keeps the current picture, rescaled.">Grid size
+      <select id="gridsize"><option value="100">100 × 100</option><option value="150">150 × 150</option><option value="200">200 × 200</option><option value="300">300 × 300</option></select><span></span>
+    </label>
+    <label for="palette" title="The colors used for the hue wheel. They change only how it looks, not how it behaves.">Palette
+      <select id="palette"><option value="rainbow">Rainbow</option><option value="twilight">Twilight</option></select><span></span>
+    </label>
+    <div class="row">
+      <button id="pause" type="button">Pause</button>
+      <button id="reset" type="button">Reset</button>
+      <button id="defaults" type="button" title="Put every setting back to its default and restart.">Defaults</button>
+      <span class="stat" id="gen">gen 0</span>
+    </div>
+
+    <div class="group">Paint</div>
+    <label for="brush" title="Hue to paint with when you drag on the grid.">Brush hue <input id="brush" class="hue" type="range" min="0" max="359" value="200"><output><span class="swatch" id="brushSwatch"></span></output></label>
+    <label for="size" title="Brush diameter in pixels.">Brush size <input id="size" type="range" min="1" max="30" value="6"><output id="sizeOut">6</output></label>
+
+    <div class="group">Share these settings</div>
+    <div class="share">
+      <input id="link" type="text" readonly aria-label="Link with these settings">
+      <button id="copy" type="button">Copy</button>
+    </div>
+  </div>
+  <details class="info" id="info">
+    <summary>What the controls do</summary>
+    <dl>
+      <dt>How it works</dt><dd>Each pixel has a hue. It eats a neighbor whose hue sits a little ahead of its own on the color wheel, and that neighbor turns into the eater's hue. Since every hue has something ahead of it, the eating goes around in circles and forms spirals and waves. The strip under the grid shows the color wheel, and the outlined part is the bite window.</dd>
+      <dt>Bite window</dt><dd>The range of hues a pixel can eat, measured ahead of its own hue. The right handle sets how far it can reach: narrow acts like having many colors, wide like having few. The left handle makes hues closer than that safe, which stops the whole grid from syncing into one slowly cycling color.</dd>
+      <dt>Mutation</dt><dd>Random drift added to an eaten pixel's new hue. At zero things tend to freeze; more keeps them moving but noisier.</dd>
+      <dt>Pickiness</dt><dd>When several neighbors could eat a pixel, how much the one closest in hue is favored. 0 picks at random; 100 always picks the closest.</dd>
+      <dt>Hunger</dt><dd>How many eligible neighbors it takes to eat a pixel. Higher is harder to get going but gives cleaner shapes.</dd>
+      <dt>Neighbors</dt><dd>Which nearby pixels count. Diamond counts straight lines out from the pixel; Square adds the corners. The number next to it is how many neighbors each pixel has.</dd>
+      <dt>Radius</dt><dd>How far away a neighbor can be. Bigger gives larger, smoother shapes but runs slower. Hunger's maximum grows with the neighbor count.</dd>
+      <dt>Speed</dt><dd>Steps per frame. Max runs as fast as your computer allows; the readout shows real steps per second.</dd>
+      <dt>Reset to</dt><dd>The pattern Reset starts from. Some settings keep spirals going but can't start them from noise. If Reset leads to a frozen grid, try Smooth or Pinwheel, or start loose and tighten settings while it runs.</dd>
+      <dt>Grid size</dt><dd>How many pixels across. Smaller runs faster and looks chunkier. Changing it keeps the current picture, rescaled.</dd>
+      <dt>Palette</dt><dd>The colors used for the hue wheel; it changes only the look. Twilight is a soft light-to-dark loop.</dd>
+      <dt>Defaults</dt><dd>Puts every setting back to its starting value and restarts. Reset only restarts the grid and keeps your settings.</dd>
+      <dt>Paint</dt><dd>Drag on the grid to paint with the brush hue, even while it runs.</dd>
+      <dt>Share</dt><dd>The link holds your current rule, speed, start, grid and palette settings. Your last settings are also remembered in this browser.</dd>
+    </dl>
+  </details>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('c');
+const ctx = cv.getContext('2d');
+
+// Share links point back at wherever this page is hosted.
+const SHARE_BASE = location.origin + location.pathname;
+const STORE_KEY = 'hue-eaters-settings';
+
+// Default settings, in the same format as a share link.
+// b/l = bite max/min (°), m = mutation (tenths of a degree), p = pickiness, t = hunger,
+// n = neighbors (4 diamond, 8 square), r = radius, s = speed step, o = start pattern, g = grid size,
+// c = palette.
+const DEFAULTS = 'b30-l10-m10-p50-t1-n4-r1-s1-osmooth-g200-crainbow';
+
+// Hues are stored as fractions of a full turn, 0..1.
+let W = 0, H = 0, img, px, grid, next;
+let NBR, K = 0, nbKey = '';
+let BITE, MINB, MUT, TAU, T, SPEED;
+let running = true, gen = 0;
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, Infinity];
+const SPEED_LABELS = ['¼×', '½×', '1×', '2×', '4×', '8×', 'max'];
+const eh = new Float32Array(48), ed = new Float32Array(48), ew = new Float32Array(48);
+
+// ---- Palettes: each maps a hue (0..1) to [r, g, b] in 0..255.
+function hslRgb(h) {
+  const s = 0.85, l = 0.55, a = s * Math.min(l, 1 - l), d = h * 360;
+  const f = n => { const k = (n + d / 30) % 12; return 255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))); };
+  return [f(0), f(8), f(4)];
+}
+// Approximation of matplotlib's "twilight" from a few stops; it loops back to its start.
+const TWILIGHT = ['#e2d9e2', '#9eb1cf', '#6680c1', '#5b3e98', '#2f1436', '#7a1e4b', '#b4513f', '#d29f88', '#e2d9e2']
+  .map(c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)));
+function twilightRgb(h) {
+  const x = h * (TWILIGHT.length - 1), i = Math.min(TWILIGHT.length - 2, Math.floor(x)), f = x - i;
+  return TWILIGHT[i].map((c, k) => c + (TWILIGHT[i + 1][k] - c) * f);
+}
+const PALETTES = { rainbow: hslRgb, twilight: twilightRgb };
+
+// Hue -> packed color lookup table, rebuilt when the palette changes.
+const LUT_N = 1024, lut = new Uint32Array(LUT_N);
+let paletteName = '', paletteFn = hslRgb;
+const css = h => `rgb(${paletteFn(h).map(Math.round).join(',')})`;
+function buildPalette(name) {
+  if (name === paletteName) return;
+  paletteName = name;
+  paletteFn = PALETTES[name] || hslRgb;
+  for (let i = 0; i < LUT_N; i++) {
+    const [r, g, b] = paletteFn(i / LUT_N).map(Math.round);
+    lut[i] = (255 << 24) | (b << 16) | (g << 8) | r;
+  }
+  // Repaint the wheel strip and brush slider in the new palette.
+  const stops = [];
+  for (let i = 0; i <= 24; i++) stops.push(`${css(i / 24)} ${(i / 24 * 100).toFixed(1)}%`);
+  document.documentElement.style.setProperty('--rainbow', `linear-gradient(90deg, ${stops.join(', ')})`);
+}
+
+// Resize the grid, rescaling the current picture if there is one.
+function setSize(n) {
+  if (n === W) return;
+  const old = grid, oW = W, oH = H;
+  W = H = n;
+  cv.width = W; cv.height = H;
+  img = ctx.createImageData(W, H);
+  px = new Uint32Array(img.data.buffer);
+  grid = new Float32Array(W * H); next = new Float32Array(W * H);
+  if (old) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+    grid[y * W + x] = old[Math.floor(y * oH / H) * oW + Math.floor(x * oW / W)];
+}
+
+function neighborOffsets(r, square) {
+  const offs = [];
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (!dx && !dy) continue;
+    if (!square && Math.abs(dx) + Math.abs(dy) > r) continue;
+    offs.push([dx, dy]);
+  }
+  return offs;
+}
+
+// Precomputed neighbor indices for every pixel, wrapping at the edges.
+function buildNeighbors(r, square) {
+  const key = `${W}-${r}-${square}`;
+  if (key === nbKey) return;
+  nbKey = key;
+  const offs = neighborOffsets(r, square);
+  K = offs.length;
+  NBR = new Int32Array(W * H * K);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+    offs.forEach(([dx, dy], k) => { NBR[(y * W + x) * K + k] = ((y + dy + H) % H) * W + (x + dx + W) % W; });
+}
+
+// ---- Settings: one letter per control, joined with dashes, e.g. b30-l0-m10-...
+// Uses only characters that survive in the link after #.
+const KEYS = { b: 'bite', l: 'minb', m: 'mut', p: 'pick', t: 't', n: 'nb', r: 'radius', s: 'speed', o: 'start', g: 'gridsize', c: 'palette' };
+
+function encodeSettings() {
+  return Object.entries(KEYS).map(([k, id]) => k + $(id).value).join('-');
+}
+
+function applySettings(token) {
+  if (!token) return false;
+  let any = false;
+  $('t').max = 48;
+  for (const part of token.split('-')) {
+    const id = KEYS[part[0]], v = part.slice(1), el = id && $(id);
+    if (!el || !v) continue;
+    if (el.tagName === 'SELECT') {
+      if ([...el.options].some(o => o.value === v)) { el.value = v; any = true; }
+    } else if (/^\d+$/.test(v)) {
+      el.value = Math.min(+el.max, Math.max(+el.min, +v)); any = true;
+    }
+  }
+  return any;
+}
+
+function readSettings(e) {
+  // Keep the bite window at least 2° wide; the handle being dragged pushes the other one.
+  const lo = $('minb'), hi = $('bite');
+  if (+hi.value - +lo.value < 2) {
+    if (e && e.target === lo) { lo.value = Math.min(+lo.value, 118); hi.value = +lo.value + 2; }
+    else { hi.value = Math.max(+hi.value, 2); lo.value = +hi.value - 2; }
+  }
+  BITE = +hi.value / 360;
+  MINB = +lo.value / 360;
+  MUT = +$('mut').value / 10 / 360;
+  // Pickiness 0 ≈ uniform random among eaters, 100 ≈ always the closest hue.
+  const p = +$('pick').value;
+  TAU = BITE * Math.pow(10, 1 - 3 * p / 100);
+  SPEED = SPEEDS[+$('speed').value];
+
+  buildPalette($('palette').value);
+  setSize(+$('gridsize').value);
+  const r = +$('radius').value, square = $('nb').value === '8';
+  buildNeighbors(r, square);
+  // Hunger can't usefully exceed the number of neighbors.
+  $('t').max = K;
+  T = +$('t').value;
+
+  $('biteOut').value = `${lo.value}–${hi.value}°`;
+  $('biteFill').style.left = (lo.value / 120 * 100) + '%';
+  $('biteFill').style.right = (100 - hi.value / 120 * 100) + '%';
+  $('mutOut').value = (+$('mut').value / 10).toFixed(1) + '°';
+  $('pickOut').value = p === 0 ? 'uniform' : p === 100 ? 'closest' : p;
+  $('tOut').value = T;
+  $('nbOut').value = K;
+  $('radiusOut').value = r;
+  $('speedOut').value = SPEED_LABELS[+$('speed').value];
+  $('biteMark').style.left = (MINB * 100) + '%';
+  $('biteMark').style.width = ((BITE - MINB) * 100) + '%';
+  $('brushSwatch').style.background = css(+$('brush').value / 360);
+  $('sizeOut').value = $('size').value;
+
+  const token = encodeSettings();
+  $('link').value = SHARE_BASE + '#' + token;
+  try { localStorage.setItem(STORE_KEY, token); } catch (err) {}
+  if (!running) draw();
+}
+
+// ---- Start patterns
+const jitter = () => (Math.random() - 0.5) * 0.005;
+const wrap = h => h - Math.floor(h);
+const TAU2 = 2 * Math.PI;
+
+function fill(fn) {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) grid[y * W + x] = wrap(fn(x, y) + jitter());
+}
+
+// Smooth: random hues on a coarse grid, blended between as vectors on the
+// color wheel so the wrap at 360° blends correctly. The twists where blending
+// fails become spiral cores.
+function smoothField() {
+  const G = 8, cx = new Float32Array(G * G), cy = new Float32Array(G * G);
+  for (let i = 0; i < G * G; i++) { const a = Math.random() * TAU2; cx[i] = Math.cos(a); cy[i] = Math.sin(a); }
+  fill((x, y) => {
+    const gx = x / W * G, gy = y / H * G, x0 = gx | 0, y0 = gy | 0, fx = gx - x0, fy = gy - y0;
+    const x1 = (x0 + 1) % G, y1 = (y0 + 1) % G;
+    const a = y0 * G + x0, b = y0 * G + x1, c = y1 * G + x0, d = y1 * G + x1;
+    const vx = (cx[a] * (1 - fx) + cx[b] * fx) * (1 - fy) + (cx[c] * (1 - fx) + cx[d] * fx) * fy;
+    const vy = (cy[a] * (1 - fx) + cy[b] * fx) * (1 - fy) + (cy[c] * (1 - fx) + cy[d] * fx) * fy;
+    return Math.atan2(vy, vx) / TAU2;
+  });
+}
+
+const STARTS = {
+  noise: () => { for (let i = 0; i < grid.length; i++) grid[i] = Math.random(); },
+  smooth: smoothField,
+  // Hue follows the angle around the center.
+  pinwheel: () => fill((x, y) => Math.atan2(y - H / 2, x - W / 2) / TAU2),
+  // Two pinwheels twisting opposite ways.
+  vortex: () => fill((x, y) => (Math.atan2(y - H / 2, x - W * 0.3) - Math.atan2(y - H / 2, x - W * 0.7)) / TAU2),
+  // One trip around the wheel every quarter of the grid out from the center.
+  rings: () => fill((x, y) => Math.hypot(x - W / 2, y - H / 2) / (W / 4)),
+  // One trip around the wheel across the grid, so the wrapped edges match.
+  gradient: () => fill(x => x / W),
+  // One base hue with a dozen small blobs of random hues.
+  seeds: () => {
+    const base = Math.random(), k = W / 200;
+    fill(() => base);
+    for (let s = 0; s < 12; s++) paintDisc(Math.random() * W, Math.random() * H, (3 + Math.random() * 4) * k, Math.random());
+  },
+};
+
+function reset() {
+  readSettings();
+  STARTS[$('start').value]();
+  gen = 0;
+  draw();
+}
+
+// ---- Simulation
+function step() {
+  for (let i = 0; i < W * H; i++) {
+    const h = grid[i], base = i * K;
+    // Collect neighbors whose hue is ahead of ours by (MINB, BITE].
+    let n = 0, dmin = 1;
+    for (let k = 0; k < K; k++) {
+      const nh = grid[NBR[base + k]];
+      let d = nh - h; if (d < 0) d += 1;
+      if (d > MINB && d <= BITE) { eh[n] = nh; ed[n] = d; if (d < dmin) dmin = d; n++; }
+    }
+    if (n < T) { next[i] = h; continue; }
+    // Weighted pick: weight = exp(-(gap - smallest gap) / tau).
+    let k = 0;
+    if (n > 1) {
+      let sum = 0;
+      for (let j = 0; j < n; j++) { ew[j] = Math.exp(-(ed[j] - dmin) / TAU); sum += ew[j]; }
+      let r = Math.random() * sum;
+      while (k < n - 1 && (r -= ew[k]) > 0) k++;
+    }
+    next[i] = wrap(eh[k] + (Math.random() * 2 - 1) * MUT);
+  }
+  [grid, next] = [next, grid];
+  gen++;
+}
+
+let rate = 0, rateGen = 0, rateT = performance.now();
+function draw() {
+  for (let i = 0; i < grid.length; i++) px[i] = lut[(grid[i] * LUT_N) & (LUT_N - 1)];
+  ctx.putImageData(img, 0, 0);
+  const now = performance.now();
+  if (now - rateT > 500) { rate = Math.round((gen - rateGen) * 1000 / (now - rateT)); rateGen = gen; rateT = now; }
+  $('gen').textContent = `gen ${gen} · ${running ? rate : 0} steps/s`;
+}
+
+// Fractional speeds step every few frames; "max" steps until the frame's time budget runs out.
+let acc = 0;
+function loop() {
+  if (running) {
+    if (SPEED === Infinity) {
+      const t0 = performance.now();
+      do step(); while (performance.now() - t0 < 14);
+    } else {
+      acc += SPEED;
+      while (acc >= 1) { step(); acc -= 1; }
+    }
+    draw();
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---- Painting
+function paintDisc(cx, cy, r, hue) {
+  for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+    if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
+    grid[((y % H + H) % H) * W + (x % W + W) % W] = wrap(hue + jitter());
+  }
+}
+
+let last = null;
+function canvasPoint(e) {
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H];
+}
+function paintTo(p) {
+  const hue = +$('brush').value / 360, size = +$('size').value / 2;
+  // Fill in between pointer events so fast strokes stay continuous.
+  const [x0, y0] = last || p, dist = Math.hypot(p[0] - x0, p[1] - y0), n = Math.max(1, Math.ceil(dist / Math.max(1, size / 2)));
+  for (let i = 1; i <= n; i++) paintDisc(x0 + (p[0] - x0) * i / n, y0 + (p[1] - y0) * i / n, Math.max(0.5, size), hue);
+  last = p;
+  if (!running) draw();
+}
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); last = null; paintTo(canvasPoint(e)); });
+cv.addEventListener('pointermove', e => { if (cv.hasPointerCapture(e.pointerId)) paintTo(canvasPoint(e)); });
+cv.addEventListener('pointerup', () => { last = null; });
+
+// ---- Wiring
+for (const id of ['bite', 'minb', 'mut', 'pick', 't', 'radius', 'speed', 'brush', 'size']) $(id).oninput = readSettings;
+for (const id of ['nb', 'start', 'gridsize', 'palette']) $(id).onchange = readSettings;
+// The two bite handles overlap; put whichever is nearer the pointer on top.
+$('dual').addEventListener('pointermove', e => {
+  if (e.buttons) return;
+  const r = $('dual').getBoundingClientRect(), v = (e.clientX - r.left) / r.width * 120;
+  const lowNearer = Math.abs(v - $('minb').value) < Math.abs(v - $('bite').value);
+  $('minb').style.zIndex = lowNearer ? 2 : 1;
+  $('bite').style.zIndex = lowNearer ? 1 : 2;
+});
+$('reset').onclick = reset;
+$('defaults').onclick = () => { applySettings(DEFAULTS); reset(); };
+$('pause').onclick = () => { running = !running; $('pause').textContent = running ? 'Pause' : 'Play'; };
+$('copy').onclick = () => {
+  const done = () => { $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = 'Copy', 1500); };
+  const fallback = () => { $('link').focus(); $('link').select(); };
+  try { navigator.clipboard.writeText($('link').value).then(done, fallback); } catch (e) { fallback(); }
+};
+
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) { running = false; $('pause').textContent = 'Play'; }
+
+// Start from the defaults, then layer on a link's settings, or else the ones remembered in this browser.
+let stored = null;
+try { stored = localStorage.getItem(STORE_KEY); } catch (e) {}
+applySettings(DEFAULTS);
+applySettings(location.hash.slice(1)) || applySettings(stored);
+
+reset();
+loop();
+</script>
+</body>
+</html>
