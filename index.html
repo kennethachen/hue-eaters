@@ -30,12 +30,26 @@
   main { max-width: 640px; margin: 0 auto; display: grid; gap: 14px; }
   h1 { font: 400 22px/1 var(--display); margin: 0; letter-spacing: .04em; }
   p { margin: 0; color: var(--muted); max-width: 62ch; }
-  canvas {
-    width: 100%; aspect-ratio: 1; max-width: 100%;
+  [hidden] { display: none !important; }
+  .stage { position: relative; }
+  #c {
+    width: 100%; aspect-ratio: 1; max-width: 100%; box-sizing: border-box;
     image-rendering: pixelated; display: block;
     border: 1px solid var(--line); background: #000;
     cursor: crosshair; touch-action: none;
   }
+  #ov { position: absolute; inset: 1px; width: calc(100% - 2px); height: calc(100% - 2px); pointer-events: none; }
+  .statbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .check { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+  .check input { accent-color: var(--accent); margin: 0; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; display: grid; gap: 4px; min-width: 0; }
+  .tile.wide { grid-column: 1 / -1; }
+  .tlabel { font: 400 11px var(--display); letter-spacing: .08em; color: var(--muted); }
+  .tval { font: 500 20px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+  .tnote { color: var(--muted); font-size: 11px; }
+  .spark { width: 100%; height: 34px; display: block; }
+  .histc { width: 100%; height: 48px; display: block; }
   .wheel { position: relative; height: 10px; background: var(--rainbow); }
   .bite { position: absolute; top: -3px; bottom: -3px; left: 0; border: 1px solid var(--fg); border-left-width: 2px; }
   .controls {
@@ -90,8 +104,30 @@
 <main>
   <h1>Hue Eaters</h1>
   <p>Every pixel has a hue anywhere on the color wheel. A pixel eats a neighbor whose hue is a little ahead of its own, within the bite window, and the eaten pixel takes on the eater's hue plus a small random drift. Drag on the grid to paint.</p>
-  <canvas id="c"></canvas>
+  <div class="stage"><canvas id="c"></canvas><canvas id="ov" aria-hidden="true"></canvas></div>
   <div class="wheel" aria-hidden="true"><div class="bite" id="biteMark"></div></div>
+  <div class="statbar">
+    <button id="statsToggle" type="button" aria-expanded="false" aria-controls="stats">Show stats</button>
+    <label class="check" for="cores" title="Circle every point the colors wind all the way around, which is the center of a spiral."><input id="cores" type="checkbox" autocomplete="off"> Mark spiral centers</label>
+  </div>
+  <section class="stats" id="stats" hidden>
+    <div class="tile" title="Share of pixels that got eaten on the latest step.">
+      <div class="tlabel">Activity</div><div class="tval" id="actVal">–</div>
+      <canvas class="spark" id="actSpark"></canvas><div class="tnote">pixels eaten per step</div>
+    </div>
+    <div class="tile" title="How close the grid is to one single color: 0 means colors are spread evenly, 1 means everything is the same color.">
+      <div class="tlabel">Sync</div><div class="tval" id="syncVal">–</div>
+      <canvas class="spark" id="syncSpark"></canvas><div class="tnote">0 spread out · 1 all one color</div>
+    </div>
+    <div class="tile" title="Points the colors wind all the way around. Tight pairs that cancel out, which come from specks, are left out.">
+      <div class="tlabel">Spirals</div><div class="tval" id="spirVal">–</div>
+      <canvas class="spark" id="spirSpark"></canvas><div class="tnote" id="spirNote">centers on the grid</div>
+    </div>
+    <div class="tile wide" title="How much of the grid sits at each hue, left to right around the color wheel.">
+      <div class="tlabel">Color mix</div>
+      <canvas class="histc" id="hist"></canvas><div class="tnote">share of the grid at each hue · last 30 seconds in the charts above</div>
+    </div>
+  </section>
   <div class="controls">
     <div class="group">Rules</div>
     <div class="duallabel" title="The range of hues a pixel can eat, measured ahead of its own hue on the color wheel. Hues closer than the low end are safe; hues past the high end are out of reach.">
@@ -163,6 +199,8 @@
       <dt>Palette</dt><dd>The colors used for the hue wheel; it changes only the look. Twilight is a soft light-to-dark loop.</dd>
       <dt>Defaults</dt><dd>Puts every setting back to its starting value and restarts. Reset only restarts the grid and keeps your settings.</dd>
       <dt>Paint</dt><dd>Drag on the grid to paint with the brush hue, even while it runs.</dd>
+      <dt>Stats</dt><dd>Activity is the share of pixels eaten each step; it drops to zero when the grid freezes. Sync runs from 0, colors spread evenly, to 1, the whole grid one color. Spirals counts spiral centers, the points the colors wind all the way around; the arrows split them by which way the colors go around. Color mix shows how much of the grid sits at each hue. The small charts cover the last 30 seconds.</dd>
+      <dt>Spiral centers</dt><dd>Circles each spiral center on the grid. Specks create tight pairs of opposite centers that cancel out, so those are left out.</dd>
       <dt>Share</dt><dd>The link holds your current rule, speed, start, grid and palette settings. Your last settings are also remembered in this browser.</dd>
     </dl>
   </details>
@@ -375,11 +413,15 @@ function reset() {
   readSettings();
   STARTS[$('start').value]();
   gen = 0;
+  lastEaten = 0;
+  for (const k in history) history[k].length = 0;
   draw();
 }
 
 // ---- Simulation
+let lastEaten = 0;
 function step() {
+  let eaten = 0;
   for (let i = 0; i < W * H; i++) {
     const h = grid[i], base = i * K;
     // Collect neighbors whose hue is ahead of ours by (MINB, BITE].
@@ -399,7 +441,9 @@ function step() {
       while (k < n - 1 && (r -= ew[k]) > 0) k++;
     }
     next[i] = wrap(eh[k] + (Math.random() * 2 - 1) * MUT);
+    eaten++;
   }
+  lastEaten = eaten;
   [grid, next] = [next, grid];
   gen++;
 }
@@ -411,6 +455,126 @@ function draw() {
   const now = performance.now();
   if (now - rateT > 500) { rate = Math.round((gen - rateGen) * 1000 / (now - rateT)); rateGen = gen; rateT = now; }
   $('gen').textContent = `gen ${gen} · ${running ? rate : 0} steps/s`;
+  if (coresOn) findCores();
+  drawOverlay();
+  if (statsOn && now - lastSample > 250) { lastSample = now; sample(); }
+}
+
+// ---- Stats and spiral centers (computed only while shown)
+const ov = $('ov'), octx = ov.getContext('2d');
+let statsOn = false, coresOn = false, lastSample = 0, cores = [], coreSign = null;
+const HIST_BINS = 36, HISTORY = 120, history = { act: [], sync: [], spir: [] };
+const COS = new Float32Array(LUT_N), SIN = new Float32Array(LUT_N);
+for (let i = 0; i < LUT_N; i++) { COS[i] = Math.cos(i / LUT_N * TAU2); SIN[i] = Math.sin(i / LUT_N * TAU2); }
+const ink = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// Signed hue step between two pixels, taking the short way around the wheel.
+const dw = v => v - Math.round(v);
+
+// A spiral center sits inside a 2x2 block of pixels whose hues wind once around the wheel.
+function findCores() {
+  if (!coreSign || coreSign.length !== W * H) coreSign = new Int8Array(W * H);
+  const found = [];
+  for (let y = 0; y < H; y++) {
+    const y1 = (y + 1) % H;
+    for (let x = 0; x < W; x++) {
+      const x1 = (x + 1) % W;
+      const a = grid[y * W + x], b = grid[y * W + x1], c = grid[y1 * W + x1], d = grid[y1 * W + x];
+      const w = dw(b - a) + dw(c - b) + dw(d - c) + dw(a - d);
+      const s = w > 0.5 ? 1 : w < -0.5 ? -1 : 0;
+      coreSign[y * W + x] = s;
+      if (s) found.push(x, y, s);
+    }
+  }
+  // Specks make tight pairs of opposite centers; keep only centers with no opposite one within 2 pixels.
+  cores = [];
+  for (let i = 0; i < found.length; i += 3) {
+    const x = found[i], y = found[i + 1], s = found[i + 2];
+    let paired = false;
+    for (let dy = -2; dy <= 2 && !paired; dy++) for (let dx = -2; dx <= 2; dx++)
+      if (coreSign[((y + dy + H) % H) * W + (x + dx + W) % W] === -s) { paired = true; break; }
+    if (!paired) cores.push(x, y, s);
+  }
+}
+
+function fitCanvas(c) {
+  const dpr = window.devicePixelRatio || 1, w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  return dpr;
+}
+
+function drawOverlay() {
+  if (!coresOn) { if (ov.width) octx.clearRect(0, 0, ov.width, ov.height); return; }
+  const dpr = fitCanvas(ov), sx = ov.width / W, sy = ov.height / H, r = Math.max(7 * dpr, sx * 2.5);
+  octx.clearRect(0, 0, ov.width, ov.height);
+  octx.beginPath();
+  for (let i = 0; i < cores.length; i += 3) {
+    // The block's center is the corner shared by its four pixels.
+    const cx = (cores[i] + 1) * sx, cy = (cores[i + 1] + 1) * sy;
+    octx.moveTo(cx + r, cy); octx.arc(cx, cy, r, 0, TAU2);
+  }
+  octx.lineWidth = 3.5 * dpr; octx.strokeStyle = 'rgba(0,0,0,0.65)'; octx.stroke();
+  octx.lineWidth = 1.5 * dpr; octx.strokeStyle = '#fff'; octx.stroke();
+}
+
+function spark(id, data, max) {
+  const c = $(id), dpr = fitCanvas(c), g = c.getContext('2d'), w = c.width, h = c.height, pad = 3 * dpr;
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = ink('--line'); g.fillRect(0, h - dpr, w, dpr);
+  if (data.length < 2) return;
+  const xAt = i => (HISTORY - data.length + i) / (HISTORY - 1) * (w - pad) , yAt = v => h - pad - Math.min(1, v / max) * (h - 2 * pad);
+  g.beginPath();
+  data.forEach((v, i) => i ? g.lineTo(xAt(i), yAt(v)) : g.moveTo(xAt(i), yAt(v)));
+  const accent = ink('--accent');
+  g.lineWidth = 2 * dpr; g.strokeStyle = accent; g.lineJoin = 'round'; g.stroke();
+  g.lineTo(xAt(data.length - 1), h); g.lineTo(xAt(0), h); g.closePath();
+  g.globalAlpha = 0.15; g.fillStyle = accent; g.fill(); g.globalAlpha = 1;
+  g.beginPath(); g.arc(xAt(data.length - 1), yAt(data[data.length - 1]), 3 * dpr, 0, TAU2); g.fill();
+}
+
+function drawHist(bins) {
+  const c = $('hist'), dpr = fitCanvas(c), g = c.getContext('2d'), w = c.width, h = c.height, gap = 2 * dpr;
+  const bw = (w - gap * (HIST_BINS - 1)) / HIST_BINS, max = Math.max(...bins) || 1;
+  g.clearRect(0, 0, w, h);
+  bins.forEach((v, i) => {
+    const bh = v / max * (h - dpr);
+    g.fillStyle = css((i + 0.5) / HIST_BINS);
+    g.fillRect(i * (bw + gap), h - dpr - bh, bw, bh);
+  });
+  g.fillStyle = ink('--line'); g.fillRect(0, h - dpr, w, dpr);
+}
+
+function push(arr, v) { arr.push(v); if (arr.length > HISTORY) arr.shift(); }
+
+function sample() {
+  const N = W * H, bins = new Array(HIST_BINS).fill(0);
+  let sx = 0, sy = 0;
+  for (let i = 0; i < N; i++) {
+    const j = (grid[i] * LUT_N) & (LUT_N - 1);
+    sx += COS[j]; sy += SIN[j];
+    bins[(j * HIST_BINS / LUT_N) | 0]++;
+  }
+  if (!coresOn) findCores();
+  let cw = 0;
+  for (let i = 2; i < cores.length; i += 3) if (cores[i] > 0) cw++;
+  const act = lastEaten / N, sync = Math.hypot(sx, sy) / N, spir = cores.length / 3;
+  push(history.act, act); push(history.sync, sync); push(history.spir, spir);
+  $('actVal').textContent = (act * 100).toFixed(1) + '%';
+  $('syncVal').textContent = sync.toFixed(2);
+  $('spirVal').textContent = spir;
+  $('spirNote').textContent = `${cw} ↻ · ${spir - cw} ↺`;
+  spark('actSpark', history.act, Math.max(0.05, ...history.act) * 1.1);
+  spark('syncSpark', history.sync, 1);
+  spark('spirSpark', history.spir, Math.max(4, ...history.spir) * 1.1);
+  drawHist(bins);
+}
+
+function setStats(on) {
+  statsOn = on;
+  $('stats').hidden = !on;
+  $('statsToggle').textContent = on ? 'Hide stats' : 'Show stats';
+  $('statsToggle').setAttribute('aria-expanded', on);
+  if (on && grid) { lastSample = 0; draw(); }
 }
 
 // Fractional speeds step every few frames; "max" steps until the frame's time budget runs out.
@@ -466,6 +630,11 @@ $('dual').addEventListener('pointermove', e => {
   $('bite').style.zIndex = lowNearer ? 1 : 2;
 });
 $('reset').onclick = reset;
+$('statsToggle').onclick = () => setStats(!statsOn);
+$('cores').onchange = () => {
+  coresOn = $('cores').checked;
+  draw();
+};
 $('defaults').onclick = () => { applySettings(DEFAULTS); reset(); };
 $('pause').onclick = () => { running = !running; $('pause').textContent = running ? 'Pause' : 'Play'; };
 $('copy').onclick = () => {
